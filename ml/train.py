@@ -60,59 +60,45 @@ def prepare_training_data(
     # 合成データの追加
     if generate_synthetic and len(examples) < 100:
         print(f"Generating {n_synthetic} synthetic examples...")
-        synth_gen = SyntheticDataGenerator()
 
-        from cup_handle_detector import CupHandleDetector
-        detector = CupHandleDetector()
+        for i in range(n_synthetic):
+            # ランダムなパラメータで合成データを直接生成（検出器を使わない）
+            cup_depth = np.random.uniform(12, 33)
+            handle_depth = np.random.uniform(5, 15)
+            cup_duration = np.random.randint(50, 150)
+            handle_duration = np.random.randint(10, 35)
 
-        generated_count = 0
-        attempt = 0
-        max_attempts = n_synthetic * 10  # 最大試行回数
+            # 品質スコアを計算（理想的なパラメータに近いほど高得点）
+            # 理想: カップ深さ15-25%, ハンドル深さ8-12%, ハンドル/カップ比率 < 0.5
+            depth_score = 100 - abs(cup_depth - 20) * 3  # 20%が理想
+            handle_score = 100 - abs(handle_depth - 10) * 5  # 10%が理想
+            ratio_score = 100 - max(0, (handle_depth / cup_depth - 0.4) * 100)
+            quality = max(30, min(95, (depth_score + handle_score + ratio_score) / 3))
 
-        while generated_count < n_synthetic and attempt < max_attempts:
-            attempt += 1
-            # ランダムなパラメータで合成データ生成
-            cup_depth = np.random.uniform(15, 28)  # 検出しやすい範囲に調整
-            handle_depth = np.random.uniform(8, 12)  # 検出しやすい範囲に調整
+            # 品質スコアに基づいて成功/失敗を決定
+            success_prob = quality / 100 * 0.6 + 0.2
+            is_success = np.random.random() < success_prob
+            return_pct = np.random.uniform(5, 25) if is_success else np.random.uniform(-10, 0)
 
-            df = synth_gen.generate_synthetic_cup_handle(
-                base_price=np.random.uniform(500, 5000),
-                cup_depth_pct=cup_depth,
-                handle_depth_pct=handle_depth,
-                cup_duration=np.random.randint(60, 120),
-                handle_duration=np.random.randint(15, 30),
+            example = TrainingExample(
+                symbol=f'SYNTH{i:04d}',
+                entry_date=datetime.now().strftime('%Y-%m-%d'),
+                exit_date=datetime.now().strftime('%Y-%m-%d'),
+                return_pct=return_pct,
+                label=1 if is_success else 0,
+                quality_score=quality,
+                cup_depth=cup_depth,
+                handle_depth=handle_depth,
+                cup_duration=cup_duration,
+                handle_duration=handle_duration,
+                volume_valid=np.random.random() > 0.3,  # 70%の確率でTrue
             )
+            examples.append(example)
 
-            result = detector.detect(df)
+            if (i + 1) % 100 == 0:
+                print(f"  Generated {i + 1}/{n_synthetic} examples")
 
-            if result.get('is_match'):
-                # 成功/失敗をランダムに割り当て（合成データなので）
-                # 品質スコアが高いほど成功確率が高い
-                quality = result.get('pattern_quality_score', 50)
-                success_prob = quality / 100 * 0.7 + 0.15
-                is_success = np.random.random() < success_prob
-                return_pct = np.random.uniform(5, 20) if is_success else np.random.uniform(-8, 0)
-
-                example = TrainingExample(
-                    symbol=f'SYNTH{generated_count:04d}',
-                    entry_date=datetime.now().strftime('%Y-%m-%d'),
-                    exit_date=datetime.now().strftime('%Y-%m-%d'),
-                    return_pct=return_pct,
-                    label=1 if is_success else 0,
-                    quality_score=quality,
-                    cup_depth=result.get('cup_depth', 0),
-                    handle_depth=result.get('handle_depth', 0),
-                    cup_duration=result.get('cup_duration', 100),
-                    handle_duration=result.get('handle_duration', 20),
-                    volume_valid=result.get('volume_is_valid', False),
-                )
-                examples.append(example)
-                generated_count += 1
-
-                if generated_count % 50 == 0:
-                    print(f"  Generated {generated_count}/{n_synthetic} examples (attempts: {attempt})")
-
-        print(f"Generated {generated_count} synthetic examples (total attempts: {attempt})")
+        print(f"Generated {n_synthetic} synthetic examples")
 
     # 統計情報
     stats = {
