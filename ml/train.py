@@ -30,6 +30,46 @@ from ml.gbm_model import GBMClassifier, HAS_LIGHTGBM
 from ml.ensemble import HybridEnsemble
 
 
+def load_backtest_trades(data_dir: str) -> List[TrainingExample]:
+    """
+    バックテスト結果を訓練データとして読み込み
+
+    Args:
+        data_dir: データディレクトリ
+
+    Returns:
+        TrainingExampleのリスト
+    """
+    filepath = os.path.join(data_dir, 'backtest_trades.json')
+    if not os.path.exists(filepath):
+        return []
+
+    print(f"Loading backtest trades from {filepath}")
+
+    with open(filepath, 'r', encoding='utf-8') as f:
+        trades = json.load(f)
+
+    examples = []
+    for trade in trades:
+        example = TrainingExample(
+            symbol=trade['symbol'],
+            entry_date=trade['entry_date'],
+            exit_date=trade['exit_date'],
+            return_pct=trade['return_pct'],
+            label=1 if trade['return_pct'] > 0 else 0,
+            quality_score=trade['pattern_score'],
+            cup_depth=trade['cup_depth'],
+            handle_depth=trade['handle_depth'],
+            cup_duration=trade.get('holding_days', 20) * 5,  # 推定値
+            handle_duration=trade.get('holding_days', 20),
+            volume_valid=True,
+        )
+        examples.append(example)
+
+    print(f"Loaded {len(examples)} trades from backtest results")
+    return examples
+
+
 def prepare_training_data(
     data_dir: str,
     generate_synthetic: bool = True,
@@ -37,6 +77,11 @@ def prepare_training_data(
 ) -> Tuple[List[TrainingExample], Dict]:
     """
     訓練データを準備
+
+    優先順位:
+    1. バックテスト結果 (backtest_trades.json) - 実際の株価データに基づく
+    2. 既存データセット (dataset.json)
+    3. 合成データ (フォールバック)
 
     Args:
         data_dir: データディレクトリ
@@ -46,36 +91,39 @@ def prepare_training_data(
     Returns:
         (訓練サンプルリスト, 統計情報)
     """
-    generator = MLDataGenerator(output_dir=data_dir)
+    examples = []
 
-    # 既存データセットの読み込みを試みる
+    # 1. まずバックテスト結果を読み込み（最優先）
+    backtest_examples = load_backtest_trades(data_dir)
+    if backtest_examples:
+        examples.extend(backtest_examples)
+        print(f"  -> Using {len(backtest_examples)} real backtest trades")
+
+    # 2. 既存データセットも追加
+    generator = MLDataGenerator(output_dir=data_dir)
     dataset_path = os.path.join(data_dir, 'dataset.json')
     if os.path.exists(dataset_path):
         print(f"Loading existing dataset from {dataset_path}")
-        examples = generator.load_dataset('dataset.json')
-    else:
-        examples = []
-        print("No existing dataset found.")
+        dataset_examples = generator.load_dataset('dataset.json')
+        examples.extend(dataset_examples)
+        print(f"  -> Added {len(dataset_examples)} examples from dataset")
 
-    # 合成データの追加
-    if generate_synthetic and len(examples) < 100:
-        print(f"Generating {n_synthetic} synthetic examples...")
+    # 3. データが不足している場合のみ合成データを生成（フォールバック）
+    if generate_synthetic and len(examples) < 50:
+        print(f"\nInsufficient data ({len(examples)} samples). Generating {n_synthetic} synthetic examples...")
+        print("NOTE: For better results, run backtest first to generate real training data.")
 
         for i in range(n_synthetic):
-            # ランダムなパラメータで合成データを直接生成（検出器を使わない）
             cup_depth = np.random.uniform(12, 33)
             handle_depth = np.random.uniform(5, 15)
             cup_duration = np.random.randint(50, 150)
             handle_duration = np.random.randint(10, 35)
 
-            # 品質スコアを計算（理想的なパラメータに近いほど高得点）
-            # 理想: カップ深さ15-25%, ハンドル深さ8-12%, ハンドル/カップ比率 < 0.5
-            depth_score = 100 - abs(cup_depth - 20) * 3  # 20%が理想
-            handle_score = 100 - abs(handle_depth - 10) * 5  # 10%が理想
+            depth_score = 100 - abs(cup_depth - 20) * 3
+            handle_score = 100 - abs(handle_depth - 10) * 5
             ratio_score = 100 - max(0, (handle_depth / cup_depth - 0.4) * 100)
             quality = max(30, min(95, (depth_score + handle_score + ratio_score) / 3))
 
-            # 品質スコアに基づいて成功/失敗を決定
             success_prob = quality / 100 * 0.6 + 0.2
             is_success = np.random.random() < success_prob
             return_pct = np.random.uniform(5, 25) if is_success else np.random.uniform(-10, 0)
@@ -91,12 +139,12 @@ def prepare_training_data(
                 handle_depth=handle_depth,
                 cup_duration=cup_duration,
                 handle_duration=handle_duration,
-                volume_valid=np.random.random() > 0.3,  # 70%の確率でTrue
+                volume_valid=np.random.random() > 0.3,
             )
             examples.append(example)
 
             if (i + 1) % 100 == 0:
-                print(f"  Generated {i + 1}/{n_synthetic} examples")
+                print(f"  Generated {i + 1}/{n_synthetic} synthetic examples")
 
         print(f"Generated {n_synthetic} synthetic examples")
 
@@ -105,6 +153,7 @@ def prepare_training_data(
         'total': len(examples),
         'success': sum(1 for ex in examples if ex.label == 1),
         'failure': sum(1 for ex in examples if ex.label == 0),
+        'from_backtest': len(backtest_examples) if backtest_examples else 0,
     }
 
     return examples, stats

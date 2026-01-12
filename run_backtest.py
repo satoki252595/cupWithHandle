@@ -12,7 +12,8 @@ from backtest import (
     select_diversified_stocks,
     CupHandleBacktester,
     BacktestResult,
-    generate_report
+    generate_report,
+    save_trades_for_ml
 )
 
 def main():
@@ -105,6 +106,15 @@ def main():
     report_path = os.path.join(output_dir, f'backtest_report_{timestamp}.md')
 
     generate_report(results, symbols, report_path)
+
+    # 最良結果のトレードをML用に保存
+    if results and results[0].trades:
+        ml_data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ml', 'data')
+        ml_data_path = os.path.join(ml_data_dir, 'backtest_trades.json')
+        save_trades_for_ml(results[0].trades, ml_data_path)
+        print(f"\n[ML] Best parameter trades saved for ML training")
+        print(f"     Total trades: {len(results[0].trades)}")
+        print(f"     Win rate: {results[0].win_rate:.1f}%")
 
     print(f"\nEnd: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 70)

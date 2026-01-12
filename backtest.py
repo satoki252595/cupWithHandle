@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 import time
 import os
 import sys
+import json
 import warnings
 import itertools
 
@@ -565,6 +566,38 @@ detector = CupHandleDetector(
         f.write(report)
 
     print(f"\nReport saved to: {output_path}")
+
+
+def save_trades_for_ml(trades: List[BacktestTrade], output_path: str):
+    """
+    MLトレーニング用にトレード結果を保存
+
+    Args:
+        trades: BacktestTradeのリスト
+        output_path: 保存先パス
+    """
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    data = []
+    for trade in trades:
+        data.append({
+            'symbol': trade.symbol,
+            'company_name': trade.company_name,
+            'entry_date': trade.entry_date.strftime('%Y-%m-%d'),
+            'exit_date': trade.exit_date.strftime('%Y-%m-%d'),
+            'entry_price': trade.entry_price,
+            'exit_price': trade.exit_price,
+            'return_pct': trade.return_pct,
+            'pattern_score': trade.pattern_score,
+            'cup_depth': trade.cup_depth,
+            'handle_depth': trade.handle_depth,
+            'holding_days': trade.holding_days,
+        })
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    print(f"Saved {len(trades)} trades for ML training to: {output_path}")
 
 
 if __name__ == '__main__':
