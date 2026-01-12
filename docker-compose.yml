@@ -1,0 +1,126 @@
+# Cup with Handle Pattern Detector - Docker Compose
+# ==================================================
+#
+# Usage:
+#   docker-compose build                    # Build images
+#   docker-compose run scanner --help       # Show help
+#   docker-compose run scanner 7203 6758    # Scan specific stocks
+#   docker-compose run scanner --sample nikkei  # Sample test
+#   docker-compose run scanner --ml-mode 7203   # ML prediction mode
+#   docker-compose run trainer              # Train ML models
+#   docker-compose run backtest             # Run backtest
+
+version: '3.8'
+
+services:
+  # メインスキャナー
+  scanner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cup-handle-detector:latest
+    container_name: cup-handle-scanner
+    volumes:
+      - ./output:/app/output
+      - ./ml/models:/app/ml/models
+      - ./ml/data:/app/ml/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    entrypoint: ["python", "main.py"]
+    # デフォルトはヘルプ表示
+    command: ["--help"]
+    # CPUリソース制限（必要に応じて調整）
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 16G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+  # ML訓練用
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cup-handle-detector:latest
+    container_name: cup-handle-trainer
+    volumes:
+      - ./output:/app/output
+      - ./ml/models:/app/ml/models
+      - ./ml/data:/app/ml/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    entrypoint: ["python", "ml/train.py"]
+    command: ["--generate-synthetic", "--n-synthetic", "300"]
+    deploy:
+      resources:
+        limits:
+          cpus: '12'
+          memory: 32G
+        reservations:
+          cpus: '4'
+          memory: 8G
+
+  # バックテスト用
+  backtest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cup-handle-detector:latest
+    container_name: cup-handle-backtest
+    volumes:
+      - ./output:/app/output
+      - ./ml/models:/app/ml/models
+      - ./ml/data:/app/ml/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    entrypoint: ["python", "run_backtest.py"]
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 16G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+  # モデル評価用
+  evaluator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cup-handle-detector:latest
+    container_name: cup-handle-evaluator
+    volumes:
+      - ./output:/app/output
+      - ./ml/models:/app/ml/models
+      - ./ml/data:/app/ml/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    entrypoint: ["python", "ml/evaluate.py"]
+
+  # インタラクティブシェル（デバッグ用）
+  shell:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cup-handle-detector:latest
+    container_name: cup-handle-shell
+    volumes:
+      - ./output:/app/output
+      - ./ml/models:/app/ml/models
+      - ./ml/data:/app/ml/data
+      - .:/app/src:ro  # ソースコード参照用（読み取り専用）
+    environment:
+      - PYTHONUNBUFFERED=1
+    stdin_open: true
+    tty: true
+    entrypoint: ["/bin/bash"]
+
+# 永続化ボリューム（オプション）
+volumes:
+  output:
+  ml_models:
+  ml_data:

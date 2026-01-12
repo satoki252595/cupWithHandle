@@ -56,6 +56,8 @@
 
 ## 使い方
 
+### ローカル実行
+
 ```bash
 # 依存パッケージのインストール
 pip install -r requirements.txt
@@ -66,9 +68,37 @@ python main.py 7203 6758 8035
 # サンプル銘柄でテスト
 python main.py --sample nikkei
 
+# ML予測モード
+python main.py 7203 6758 --ml-mode
+
 # 全銘柄スクリーニング（時間がかかります）
 python main.py
 ```
+
+### Docker実行
+
+```bash
+# イメージをビルド
+./docker-run.sh build       # Linux/macOS/WSL
+docker-run.bat build        # Windows
+
+# 指定銘柄をスキャン
+./docker-run.sh scan 7203 6758 8035
+
+# サンプルテスト
+./docker-run.sh sample nikkei
+
+# ML予測モード
+./docker-run.sh ml 7203
+
+# ML訓練
+./docker-run.sh train
+
+# バックテスト
+./docker-run.sh backtest
+```
+
+詳細は [DOCKER.md](DOCKER.md) を参照してください。
 
 ---
 
@@ -131,6 +161,43 @@ detector = CupHandleDetector(
 
 ---
 
+## 機械学習機能
+
+パターン検出の精度向上のため、MLモデルを搭載しています。
+
+### 訓練
+
+```bash
+# 合成データで訓練
+python ml/train.py --generate-synthetic --n-synthetic 300
+
+# 評価
+python ml/evaluate.py
+```
+
+### ML予測モード
+
+```bash
+# ML予測付きでスキャン
+python main.py 7203 6758 --ml-mode
+```
+
+### 出力例
+
+```
+--- 7203.T ---
+  Name: Toyota Motor Corporation
+  Pattern Detected: Yes
+  Quality Score: 84.0
+
+  [ML Prediction]
+  Success Probability: 72.3%
+  Confidence: high
+  Recommendation: 強い買いシグナル: パターン品質・ML予測ともに良好
+```
+
+---
+
 ## 免責事項
 
 **本ツールは投資助言ではありません。**
@@ -146,4 +213,3 @@ detector = CupHandleDetector(
 
 - ウィリアム・オニール『オニールの成長株発掘法』
 - マーク・ミネルヴィニ『ミネルヴィニの成長株投資法』
-# cupWithHandle
