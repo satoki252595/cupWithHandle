@@ -65,15 +65,22 @@ def prepare_training_data(
         from cup_handle_detector import CupHandleDetector
         detector = CupHandleDetector()
 
-        for i in range(n_synthetic):
+        generated_count = 0
+        attempt = 0
+        max_attempts = n_synthetic * 10  # 最大試行回数
+
+        while generated_count < n_synthetic and attempt < max_attempts:
+            attempt += 1
             # ランダムなパラメータで合成データ生成
-            cup_depth = np.random.uniform(12, 30)
-            handle_depth = np.random.uniform(5, 15)
+            cup_depth = np.random.uniform(15, 28)  # 検出しやすい範囲に調整
+            handle_depth = np.random.uniform(8, 12)  # 検出しやすい範囲に調整
 
             df = synth_gen.generate_synthetic_cup_handle(
                 base_price=np.random.uniform(500, 5000),
                 cup_depth_pct=cup_depth,
                 handle_depth_pct=handle_depth,
+                cup_duration=np.random.randint(60, 120),
+                handle_duration=np.random.randint(15, 30),
             )
 
             result = detector.detect(df)
@@ -87,7 +94,7 @@ def prepare_training_data(
                 return_pct = np.random.uniform(5, 20) if is_success else np.random.uniform(-8, 0)
 
                 example = TrainingExample(
-                    symbol=f'SYNTH{i:04d}',
+                    symbol=f'SYNTH{generated_count:04d}',
                     entry_date=datetime.now().strftime('%Y-%m-%d'),
                     exit_date=datetime.now().strftime('%Y-%m-%d'),
                     return_pct=return_pct,
@@ -95,13 +102,17 @@ def prepare_training_data(
                     quality_score=quality,
                     cup_depth=result.get('cup_depth', 0),
                     handle_depth=result.get('handle_depth', 0),
-                    cup_duration=100,
-                    handle_duration=20,
+                    cup_duration=result.get('cup_duration', 100),
+                    handle_duration=result.get('handle_duration', 20),
                     volume_valid=result.get('volume_is_valid', False),
                 )
                 examples.append(example)
+                generated_count += 1
 
-        print(f"Generated {n_synthetic} synthetic examples")
+                if generated_count % 50 == 0:
+                    print(f"  Generated {generated_count}/{n_synthetic} examples (attempts: {attempt})")
+
+        print(f"Generated {generated_count} synthetic examples (total attempts: {attempt})")
 
     # 統計情報
     stats = {
